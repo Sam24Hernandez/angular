@@ -332,6 +332,7 @@ export class ComponentDecoratorHandler implements
           ...metadata,
           template: {
             nodes: template.nodes,
+            template: template.template,
             ngContentSelectors: template.ngContentSelectors,
           },
           encapsulation,
@@ -590,13 +591,33 @@ export class ComponentDecoratorHandler implements
   compile(
       node: ClassDeclaration, analysis: Readonly<ComponentAnalysisData>,
       resolution: Readonly<ComponentResolutionData>, pool: ConstantPool): CompileResult[] {
-    const meta: R3ComponentMetadata = {...analysis.meta, ...resolution};
-
-    // FIXME: Consider introducing `compilePrelink`
+    // FIXME: Consider calling `compilePrelink` from the trait compiler
     if (this.compilationModel === CompilationModel.Prelink) {
-      compileDeclareComponentFromMetadata(meta, pool, makeBindingParser());
+      return this.compilePrelink(node, analysis, resolution, pool);
     }
+
+    const meta: R3ComponentMetadata = {...analysis.meta, ...resolution};
     const res = compileComponentFromMetadata(meta, pool, makeBindingParser());
+    const factoryRes = compileNgFactoryDefField(
+        {...meta, injectFn: Identifiers.directiveInject, target: R3FactoryTarget.Component});
+    if (analysis.metadataStmt !== null) {
+      factoryRes.statements.push(analysis.metadataStmt);
+    }
+    return [
+      factoryRes, {
+        name: 'ɵcmp',
+        initializer: res.expression,
+        statements: [],
+        type: res.type,
+      }
+    ];
+  }
+
+  private compilePrelink(
+      node: ClassDeclaration, analysis: Readonly<ComponentAnalysisData>,
+      resolution: Readonly<ComponentResolutionData>, pool: ConstantPool): CompileResult[] {
+    const meta: R3ComponentMetadata = {...analysis.meta, ...resolution};
+    const res = compileDeclareComponentFromMetadata(meta, pool, makeBindingParser());
     const factoryRes = compileNgFactoryDefField(
         {...meta, injectFn: Identifiers.directiveInject, target: R3FactoryTarget.Component});
     if (analysis.metadataStmt !== null) {
