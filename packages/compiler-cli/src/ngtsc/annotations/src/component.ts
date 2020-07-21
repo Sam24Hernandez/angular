@@ -6,7 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {compileComponentFromMetadata, compileDeclareComponentFromMetadata, ConstantPool, CssSelector, DEFAULT_INTERPOLATION_CONFIG, DomElementSchemaRegistry, Expression, ExternalExpr, Identifiers, InterpolationConfig, LexerRange, makeBindingParser, ParsedTemplate, ParseSourceFile, parseTemplate, R3ComponentMetadata, R3FactoryTarget, R3TargetBinder, SchemaMetadata, SelectorMatcher, Statement, TmplAstNode, WrappedNodeExpr} from '@angular/compiler';
+import {compileComponentFromMetadata, compileDeclareComponentFromMetadata, ConstantPool, CssSelector, DEFAULT_INTERPOLATION_CONFIG, DomElementSchemaRegistry, Expression, ExternalExpr, Identifiers, InterpolationConfig, LexerRange, makeBindingParser, ParsedTemplate, ParseSourceFile, parseTemplate, R3ComponentMetadata, R3FactoryTarget, R3TargetBinder, R3UsedDirectiveMetadata, SchemaMetadata, SelectorMatcher, Statement, TmplAstNode, WrappedNodeExpr} from '@angular/compiler';
 import * as ts from 'typescript';
 
 import {CycleAnalyzer} from '../../cycles';
@@ -491,15 +491,23 @@ export class ComponentDecoratorHandler implements
       // Set up the R3TargetBinder, as well as a 'directives' array and a 'pipes' map that are later
       // fed to the TemplateDefinitionBuilder. First, a SelectorMatcher is constructed to match
       // directives that are in scope.
-      const matcher = new SelectorMatcher<DirectiveMeta&{expression: Expression}>();
-      const directives: {selector: string, expression: Expression}[] = [];
+      const matcher =
+          new SelectorMatcher<DirectiveMeta&{selector: string}&
+                              {expression: Expression, meta: R3UsedDirectiveMetadata}>();
+      const directives:
+          {selector: string, expression: Expression, meta: R3UsedDirectiveMetadata}[] = [];
 
       for (const dir of scope.compilation.directives) {
         const {ref, selector} = dir;
         if (selector !== null) {
           const expression = this.refEmitter.emit(ref, context);
-          directives.push({selector, expression});
-          matcher.addSelectables(CssSelector.parse(selector), {...dir, expression});
+          directives.push({selector, expression, meta: dir});
+
+          // FIXME: The `...dir` and `meta: dir` os another indication that the types need to change
+          // :-)
+          matcher.addSelectables(
+              CssSelector.parse(selector),
+              {...(dir as DirectiveMeta & {selector: string}), expression, meta: dir});
         }
       }
       const pipes = new Map<string, Expression>();
@@ -546,7 +554,8 @@ export class ComponentDecoratorHandler implements
         // actually used (though the two should agree perfectly).
         //
         // TODO(alxhub): switch TemplateDefinitionBuilder over to using R3TargetBinder directly.
-        data.directives = directives;
+        // FIXME: this might be problematic :-)
+        data.directives = usedDirectives;
         data.pipes = pipes;
         data.wrapDirectivesAndPipesInClosure = wrapDirectivesAndPipesInClosure;
       } else {
