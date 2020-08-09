@@ -67,7 +67,8 @@ class ExpressionTranslatorVisitor<TStatement, TExpression> implements Expression
 
   visitDeclareVarStmt(stmt: DeclareVarStmt, context: Context): TStatement {
     return this.factory.createVariableDeclaration(
-        stmt.name, stmt.value && stmt.value.visitExpression(this, context.withExpressionMode));
+        stmt.name, stmt.value && stmt.value.visitExpression(this, context.withExpressionMode),
+        stmt.hasModifier(StmtModifier.Final));
   }
 
   visitDeclareFunctionStmt(stmt: DeclareFunctionStmt, context: Context): TStatement {
