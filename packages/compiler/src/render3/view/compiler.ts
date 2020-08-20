@@ -283,7 +283,19 @@ export function compileDeclareComponentFromMetadata(
 
   definitionMap.set('version', o.literal(1));
 
-  definitionMap.set('template', o.literal(meta.template.template));
+  let templateSpan: ParseSourceSpan|null = null;
+  if (meta.template.nodes.length > 0) {
+    const templateStart = meta.template.nodes[0].sourceSpan;
+    const templateEnd = meta.template.nodes[meta.template.nodes.length - 1].sourceSpan;
+    if (meta.template.type === 'direct') {
+      templateSpan = new ParseSourceSpan(
+          templateStart.start.moveBy(-1), templateEnd.end.moveBy(1), templateStart.details);
+    } else if (meta.template.type === 'external') {
+      templateSpan =
+          new ParseSourceSpan(templateStart.start, templateEnd.end, templateStart.details);
+    }
+  }
+  definitionMap.set('template', o.literal(meta.template.template, null, templateSpan));
 
   definitionMap.set('styles', asLiteral(meta.styles));
 

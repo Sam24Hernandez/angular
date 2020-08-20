@@ -7,7 +7,7 @@
  */
 
 import * as t from '@babel/types';
-import {AstHost, FatalLinkerError} from '../api';
+import {AstHost, FatalLinkerError, Range} from '../api';
 import {assert, extractRightMostName} from './source_file_utils';
 
 export class BabelAstHost implements AstHost<t.Expression> {
@@ -83,5 +83,18 @@ export class BabelAstHost implements AstHost<t.Expression> {
     }
 
     return stmt.argument;
+  }
+
+  getRange(node: t.Expression): Range {
+    if (node.loc === null || node.start === null || node.end === null) {
+      throw new FatalLinkerError(
+          node, 'Unable to read range for node - it is missing location information.');
+    }
+    return {
+      startLine: node.loc.start.line,
+      startCol: node.loc.start.column,
+      startPos: node.start,
+      endPos: node.end,
+    };
   }
 }

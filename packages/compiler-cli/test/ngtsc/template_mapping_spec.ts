@@ -7,9 +7,14 @@
  */
 
 /// <reference types="node" />
+import {makeEs2015LinkerPlugin} from '@angular/compiler-cli/linker/src/babel/es2015_linker_plugin';
+import {transformSync} from '@babel/core';
 import {inspect} from 'util';
 
+import {absoluteFrom, getFileSystem} from '../../src/ngtsc/file_system';
 import {runInEachFileSystem} from '../../src/ngtsc/file_system/testing';
+import {MockLogger} from '../../src/ngtsc/logging/testing';
+import {SourceFileLoader} from '../../src/ngtsc/sourcemaps';
 import {tsSourceMapBug29300Fixed} from '../../src/ngtsc/util/src/ts_source_map_bug_29300';
 import {loadStandardTestFiles} from '../helpers/src/mock_file_loading';
 
@@ -19,7 +24,7 @@ import {getMappedSegments, SegmentMapping} from './sourcemap_utils';
 const testFiles = loadStandardTestFiles();
 
 runInEachFileSystem((os) => {
-  describe('template source-mapping', () => {
+  fdescribe('template source-mapping', () => {
     let env!: NgtscTestEnvironment;
 
     beforeEach(() => {
@@ -29,7 +34,7 @@ runInEachFileSystem((os) => {
 
     describe('Inline templates', () => {
       describe('(element creation)', () => {
-        it('should map simple element with content', () => {
+        fit('should map simple element with content', () => {
           const mappings = compileAndMap('<h1>Heading 1</h1>');
           expect(mappings).toContain(
               {source: '<h1>', generated: 'i0.ɵɵelementStart(0, "h1")', sourceUrl: '../test.ts'});
@@ -520,7 +525,7 @@ runInEachFileSystem((os) => {
     function compileAndMap(template: string, templateUrl: string|null = null) {
       const templateConfig = templateUrl ? `templateUrl: '${templateUrl}'` :
                                            ('template: `' + template.replace(/`/g, '\\`') + '`');
-      env.tsconfig({sourceMap: true});
+      env.tsconfig({sourceMap: true, inlineSources: true, compilationModel: 'prelink'});
       env.write('test.ts', `
         import {Component} from '@angular/core';
 
@@ -534,7 +539,63 @@ runInEachFileSystem((os) => {
         env.write(templateUrl, template);
       }
       env.driveMain();
-      return getMappedSegments(env, 'test.js');
+
+      console.log('----------------- pre-link -----------------');
+
+      const prelinkMappings = getMappedSegments(env, 'test.js');
+      const prelinkSourceMap = env.getContents('test.js.map');
+      const prelinkContent = env.getContents('test.js');
+
+      debugger;
+      console.log(prelinkContent);
+      console.log(prelinkSourceMap);
+      dumpMappings(prelinkMappings);
+
+      console.log('----------------- post-link -----------------');
+      debugger;
+      const result = transformSync(prelinkContent, {
+        filename: 'test.js',
+        sourceMaps: true,
+        plugins: [makeEs2015LinkerPlugin()],
+        parserOpts: {sourceType: 'module', createParenthesizedExpressions: true},
+      });
+      if (result === null) {
+        throw fail('Failed to transform');
+      }
+      if (result.code == null) {
+        throw fail('Transform result does not have any code');
+      }
+      env.write('built/test-postlink.js', result.code);
+
+      // Merge the input and output source-maps
+      const fs = getFileSystem();
+      const loader = new SourceFileLoader(fs, new MockLogger(), {});
+      const file = loader.loadSourceFile(absoluteFrom('/built/test-postlink.js'), result.code, {
+        map: result.map!,
+        mapPath: absoluteFrom('/built/test-postlink.js.map'),
+      });
+      env.write('built/test-postlink.js.map', JSON.stringify(file.renderFlattenedSourceMap()));
+
+      const postlinkContent = env.getContents('test-postlink.js');
+      const postlinkSourceMap = env.getContents('test-postlink.js.map');
+      console.log(postlinkContent);
+
+      const postlinkMappings = getMappedSegments(env, 'test-postlink.js');
+      dumpMappings(postlinkMappings);
+
+      console.log('------------ CONTENT -------------');
+      console.log(prelinkContent);
+      console.log('..................................');
+      console.log(postlinkContent);
+      console.log('..................................');
+
+      console.log('------------ MAP -------------');
+      console.log(prelinkSourceMap);
+      console.log('..................................');
+      console.log(postlinkSourceMap);
+      console.log('..................................');
+
+      return postlinkMappings;
     }
 
     /**

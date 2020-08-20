@@ -12,7 +12,7 @@ import * as o from '@angular/compiler/src/output/output_ast';
 import {ChangeDetectionStrategy, ViewEncapsulation} from '../../../compiler/src/core';
 import {AstFactory} from '../../src/ngtsc/translator';
 
-import {AstHost, FatalLinkerError} from './api';
+import {AstHost, FatalLinkerError, Range} from './api';
 import {translateExpression, translateStatement} from './translator';
 
 export interface LinkerEnvironment<TStatement, TExpression> {
@@ -25,9 +25,9 @@ export interface LinkerOptions {
 }
 
 export function createLinker<TStatement, TExpression>(
-    sourceUrl: string, env: LinkerEnvironment<TStatement, TExpression>,
+    sourceUrl: string, code: string, env: LinkerEnvironment<TStatement, TExpression>,
     options: Partial<LinkerOptions> = {}): FileLinker<TStatement, TExpression> {
-  return new FileLinker(sourceUrl, env, {
+  return new FileLinker(sourceUrl, code, env, {
     enableGlobalStatements: true,
     ...options,
   });
@@ -38,8 +38,8 @@ export class FileLinker<TStatement, TExpression> {
   private ngImport: TExpression|null = null;
 
   constructor(
-      private sourceUrl: string, private env: LinkerEnvironment<TStatement, TExpression>,
-      private options: LinkerOptions) {
+      private sourceUrl: string, private code: string,
+      private env: LinkerEnvironment<TStatement, TExpression>, private options: LinkerOptions) {
     if (!this.sourceUrl) {
       throw new Error('sourceUrl is required');
     }
@@ -78,11 +78,11 @@ export class FileLinker<TStatement, TExpression> {
 
     const interpolation = InterpolationConfig.fromArray(
         metaObj.getArray('interpolation').map(entry => entry.getString()) as [string, string]);
-    const templateStr = metaObj.getString('template');
-    const template = parseTemplate(templateStr, this.sourceUrl, {
-      escapedString: true,
-      interpolationConfig: interpolation,
-    });
+    const templateNode = metaObj.getValue('template');
+    const range = getTemplateRange(templateNode, this.code);
+    const template = parseTemplate(
+        this.code, this.sourceUrl,
+        {escapedString: true, interpolationConfig: interpolation, range});
     if (template.errors !== null) {
       const errors = template.errors.map(err => err.toString()).join(', ');
       this.fail(
@@ -152,7 +152,7 @@ export class FileLinker<TStatement, TExpression> {
       fullInheritance: metaObj.getBoolean('fullInheritance'),
       selector: metaObj.getString('selector'),
       template: {
-        template: templateStr,
+        template: templateNode.getString(),
         nodes: template.nodes,
         ngContentSelectors: template.ngContentSelectors
       },
@@ -276,6 +276,26 @@ export function createSourceSpan(
       new ParseLocation(sourceFile, -1, -1, -1), new ParseLocation(sourceFile, -1, -1, -1));
 }
 
+/**
+ * Update the range to remove the start and end chars, which should be quotes around the template.
+ */
+function getTemplateRange<TExpression>(templateNode: AstValue<TExpression>, code: string): Range {
+  const {startPos, endPos, startLine, startCol} = templateNode.getRange();
+
+  if (!/["'`]/.test(code[startPos]) || code[startPos] !== code[endPos - 1]) {
+    throw new FatalLinkerError(
+        templateNode,
+        `Expected the template string to be wrapped in quotes but got: ${
+            code.substring(startPos, endPos)}`);
+  }
+  return {
+    startPos: startPos + 1,
+    endPos: endPos - 1,
+    startLine,
+    startCol: startCol + 1,
+  };
+}
+
 class AstObject<TExpression> {
   static parse<TExpression>(expr: TExpression, host: AstHost<TExpression>): AstObject<TExpression> {
     const obj = host.parseObjectLiteral(expr);
@@ -372,6 +392,10 @@ class AstValue<TExpression> {
 
   getOpaque(): o.WrappedNodeExpr<TExpression> {
     return new o.WrappedNodeExpr(this.value);
+  }
+
+  getRange(): Range {
+    return this.host.getRange(this.value);
   }
 
   isFunction(): boolean {
