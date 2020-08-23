@@ -20,9 +20,9 @@ import {CssSelector, SelectorMatcher} from '../../selector';
 import {ShadowCss} from '../../shadow_css';
 import {CONTENT_ATTR, HOST_ATTR} from '../../style_compiler';
 import {BindingParser} from '../../template_parser/binding_parser';
-import {error, OutputContext} from '../../util';
+import {error, OutputContext, unescape} from '../../util';
 import {BoundEvent} from '../r3_ast';
-import {compileFactoryFunction, R3DependencyMetadata, R3FactoryTarget, R3ResolvedDependencyType} from '../r3_factory';
+import {compileFactoryFunction, R3FactoryTarget} from '../r3_factory';
 import {Identifiers as R3} from '../r3_identifiers';
 import {Render3ParseResult} from '../r3_template_transform';
 import {prepareSyntheticListenerFunctionName, prepareSyntheticPropertyName, typeWithParameters} from '../util';
@@ -284,10 +284,13 @@ export function compileDeclareComponentFromMetadata(
   definitionMap.set('version', o.literal(1));
 
   let templateSpan: ParseSourceSpan|null = null;
+  let templateStr = meta.template.template;
   if (meta.template.nodes.length > 0) {
     const templateStart = meta.template.nodes[0].sourceSpan;
     const templateEnd = meta.template.nodes[meta.template.nodes.length - 1].sourceSpan;
     if (meta.template.type === 'direct') {
+      // Unescape backslashes that were added since this was an inline template
+      templateStr = unescape(templateStr);
       templateSpan = new ParseSourceSpan(
           templateStart.start.moveBy(-1), templateEnd.end.moveBy(1), templateStart.details);
     } else if (meta.template.type === 'external') {
@@ -295,7 +298,7 @@ export function compileDeclareComponentFromMetadata(
           new ParseSourceSpan(templateStart.start, templateEnd.end, templateStart.details);
     }
   }
-  definitionMap.set('template', o.literal(meta.template.template, null, templateSpan));
+  definitionMap.set('template', o.literal(templateStr, null, templateSpan));
 
   definitionMap.set('styles', asLiteral(meta.styles));
 
