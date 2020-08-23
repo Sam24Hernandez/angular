@@ -8,7 +8,7 @@
 
 import {AssertNotNull, BinaryOperator, BinaryOperatorExpr, CastExpr, ClassStmt, CommaExpr, CommentStmt, ConditionalExpr, DeclareFunctionStmt, DeclareVarStmt, Expression, ExpressionStatement, ExpressionVisitor, ExternalExpr, FunctionExpr, IfStmt, InstantiateExpr, InvokeFunctionExpr, InvokeMethodExpr, JSDocCommentStmt, LiteralArrayExpr, LiteralExpr, LiteralMapExpr, NotExpr, ReadKeyExpr, ReadPropExpr, ReadVarExpr, ReturnStatement, Statement, StatementVisitor, StmtModifier, ThrowStmt, TryCatchStmt, TypeofExpr, WrappedNodeExpr, WriteKeyExpr, WritePropExpr, WriteVarExpr} from '../../../compiler';
 import {LocalizedString, UnaryOperator, UnaryOperatorExpr} from '../../../compiler/src/output/output_ast';
-import {AstFactory, ObjectLiteralProperty} from '../../src/ngtsc/translator';
+import {AstFactory, ObjectLiteralProperty, TemplateElement} from '../../src/ngtsc/translator';
 
 export class Context {
   constructor(readonly isStatement: boolean) {}
@@ -74,8 +74,7 @@ class ExpressionTranslatorVisitor<TStatement, TExpression> implements Expression
   visitDeclareFunctionStmt(stmt: DeclareFunctionStmt, context: Context): TStatement {
     return this.factory.createFunctionDeclaration(
         stmt.name, stmt.params.map(param => param.name),
-        this.factory.createBlock(
-            stmt.statements.map(child => child.visitStatement(this, context.withStatementMode))));
+        this.factory.createBlock(this.visitStatements(stmt.statements, context.withStatementMode)));
   }
 
   visitExpressionStmt(stmt: ExpressionStatement, context: Context): TStatement {
@@ -95,12 +94,10 @@ class ExpressionTranslatorVisitor<TStatement, TExpression> implements Expression
   visitIfStmt(stmt: IfStmt, context: Context): TStatement {
     return this.factory.createIfStatement(
         stmt.condition.visitExpression(this, context),
-        this.factory.createBlock(
-            stmt.trueCase.map(child => child.visitStatement(this, context.withStatementMode))),
-        stmt.falseCase.length > 0 ?
-            this.factory.createBlock(stmt.falseCase.map(
-                child => child.visitStatement(this, context.withStatementMode))) :
-            null);
+        this.factory.createBlock(this.visitStatements(stmt.trueCase, context.withStatementMode)),
+        stmt.falseCase.length > 0 ? this.factory.createBlock(this.visitStatements(
+                                        stmt.falseCase, context.withStatementMode)) :
+                                    null);
   }
 
   visitTryCatchStmt(stmt: TryCatchStmt, context: Context): never {
@@ -112,12 +109,12 @@ class ExpressionTranslatorVisitor<TStatement, TExpression> implements Expression
         stmt.error.visitExpression(this, context.withExpressionMode));
   }
 
-  visitCommentStmt(stmt: CommentStmt, context: Context): TStatement {
-    return this.factory.createCommentStatement(stmt.comment, stmt.multiline);
+  visitCommentStmt(stmt: CommentStmt, context: Context): void {
+    return this.factory.addLeadingComment(stmt.comment, stmt.multiline);
   }
 
-  visitJSDocCommentStmt(stmt: JSDocCommentStmt, context: Context): TStatement {
-    return this.factory.createCommentStatement(stmt.toString(), true);
+  visitJSDocCommentStmt(stmt: JSDocCommentStmt, context: Context): void {
+    return this.factory.addLeadingComment(stmt.toString(), true);
   }
 
   visitReadVarExpr(ast: ReadVarExpr, context: Context): TExpression {
@@ -191,7 +188,15 @@ class ExpressionTranslatorVisitor<TStatement, TExpression> implements Expression
   }
 
   visitLocalizedString(ast: LocalizedString, context: Context): TExpression {
-    throw new Error('TODO');
+    const elements: TemplateElement[] = [ast.serializeI18nHead()];
+    const expressions: TExpression[] = [];
+
+    for (let i = 0; i < ast.expressions.length - 1; i++) {
+      expressions.push(ast.expressions[i].visitExpression(this, context));
+      elements.push(ast.serializeI18nTemplatePart(i + 1));
+    }
+    return this.factory.createTaggedTemplate(
+        this.factory.createIdentifier('$localize'), {elements, expressions});
   }
 
   visitExternalExpr(ast: ExternalExpr, context: Context): TExpression {
@@ -255,7 +260,7 @@ class ExpressionTranslatorVisitor<TStatement, TExpression> implements Expression
   visitFunctionExpr(ast: FunctionExpr, context: Context): TExpression {
     return this.factory.createFunctionExpression(
         ast.name ?? null, ast.params.map(param => param.name),
-        this.factory.createBlock(ast.statements.map(stmt => stmt.visitStatement(this, context))));
+        this.factory.createBlock(this.visitStatements(ast.statements, context)));
   }
 
   visitBinaryOperatorExpr(ast: BinaryOperatorExpr, context: Context): TExpression {
