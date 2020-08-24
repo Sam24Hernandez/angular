@@ -22,7 +22,7 @@ import {LexerRange} from '../../ml_parser/lexer';
 import {isNgContainer as checkIsNgContainer, splitNsName} from '../../ml_parser/tags';
 import {mapLiteral} from '../../output/map_util';
 import * as o from '../../output/output_ast';
-import {ParseError, ParseSourceSpan} from '../../parse_util';
+import {ParseError, ParseSourceFile, ParseSourceSpan} from '../../parse_util';
 import {DomElementSchemaRegistry} from '../../schema/dom_element_schema_registry';
 import {CssSelector, SelectorMatcher} from '../../selector';
 import {BindingParser} from '../../template_parser/binding_parser';
@@ -1990,6 +1990,12 @@ export interface ParseTemplateOptions {
    * but the new line should increment the current line for source mapping.
    */
   escapedString?: boolean;
+
+  /**
+   * Whether the template was inline.
+   */
+  isInline?: boolean;
+
   /**
    * An array of characters that should be considered as leading trivia.
    * Leading trivia are characters that are not important to the developer, and so should not be
@@ -2026,7 +2032,12 @@ export interface ParseTemplateOptions {
  */
 export function parseTemplate(
     template: string, templateUrl: string, options: ParseTemplateOptions = {}): ParsedTemplate {
-  const {interpolationConfig, preserveWhitespaces, enableI18nLegacyMessageIdFormat} = options;
+  const {
+    interpolationConfig,
+    preserveWhitespaces,
+    enableI18nLegacyMessageIdFormat,
+    isInline = false,
+  } = options;
   const bindingParser = makeBindingParser(interpolationConfig);
   const htmlParser = new HtmlParser();
   const parseResult = htmlParser.parse(
@@ -2042,7 +2053,8 @@ export function parseTemplate(
       nodes: [],
       styleUrls: [],
       styles: [],
-      ngContentSelectors: []
+      ngContentSelectors: [],
+      isInline,
     };
   }
 
@@ -2081,7 +2093,8 @@ export function parseTemplate(
       nodes: [],
       styleUrls: [],
       styles: [],
-      ngContentSelectors: []
+      ngContentSelectors: [],
+      isInline,
     };
   }
 
@@ -2093,7 +2106,8 @@ export function parseTemplate(
     nodes,
     styleUrls,
     styles,
-    ngContentSelectors
+    ngContentSelectors,
+    isInline,
   };
 }
 
@@ -2261,4 +2275,9 @@ export interface ParsedTemplate {
    * Any ng-content selectors extracted from the template.
    */
   ngContentSelectors: string[];
+
+  /**
+   * Whether the template was inline.
+   */
+  isInline: boolean;
 }
